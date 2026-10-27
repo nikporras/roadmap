@@ -1,5 +1,5 @@
 // Nico's Roadmap service worker: app shell offline, fonts cached, Sheet calls always live.
-const VERSION = 'roadmap-v2';
+const VERSION = 'roadmap-v3';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

@@ -1,5 +1,5 @@
 /**
- * Nico Roadmap API (v2: task status and blocked-by)
+ * Nico Roadmap API (v3: status, blocked-by, safe merge)
  * Reads and saves the whole plan for the roadmap app.
  *
  * Setup (once):
@@ -41,8 +41,9 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     checkToken_(body.token);
     lock.waitLock(10000);
-    writePlan_(body.plan);
-    return json_({ ok: true, savedAt: new Date().toISOString() });
+    const merged = body.base ? mergePlan_(body.base, body.plan, readPlan_()) : body.plan;
+    writePlan_(merged);
+    return json_({ ok: true, plan: merged, savedAt: new Date().toISOString() });
   } catch (err) {
     return json_({ ok: false, error: String(err.message || err) });
   } finally {
@@ -134,4 +135,41 @@ function writePlan_(plan) {
   ssh.getRange(11, 2, 2, 1).setValues([[(+s.realism || 80) / 100], [txt(s.stock)]]);
 
   writeTable_(TABS.backlog, (plan.backlog || []).map(b => [b]), 1);
+}
+
+// ---- 3-way merge: apply only what this device changed (base -> plan) onto the current Sheet ----
+function same_(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function isObj_(v) { return v && typeof v === 'object' && !Array.isArray(v); }
+function norm_(p) {
+  if (!p) return p;
+  const q = JSON.parse(JSON.stringify(p));
+  Object.keys(q.projects || {}).forEach(id => {
+    const ts = q.projects[id].tasks || [], m = {};
+    ts.forEach(t => { m[t.id] = t; });
+    q.projects[id].tasks = { o: ts.map(t => t.id), m: m };
+  });
+  return q;
+}
+function denorm_(q) {
+  Object.keys(q.projects || {}).forEach(id => {
+    const tk = q.projects[id].tasks || { o: [], m: {} }, m = tk.m || {}, o = (tk.o || []).filter(x => m[x]);
+    Object.keys(m).forEach(x => { if (o.indexOf(x) < 0) o.push(x); });
+    q.projects[id].tasks = o.map(x => m[x]);
+  });
+  return q;
+}
+function m3_(b, n, c) {
+  if (same_(n, b)) return c;
+  if (same_(c, b)) return n;
+  if (isObj_(b) && isObj_(n) && isObj_(c)) {
+    const out = {}, keys = {};
+    [b, n, c].forEach(o => Object.keys(o).forEach(k => { keys[k] = 1; }));
+    Object.keys(keys).forEach(k => { const v = m3_(b[k], n[k], c[k]); if (v !== undefined) out[k] = v; });
+    return out;
+  }
+  return n;
+}
+function mergePlan_(base, plan, cur) {
+  if (!base) return plan;
+  return denorm_(m3_(norm_(base), norm_(plan), norm_(cur)));
 }
